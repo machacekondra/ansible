@@ -254,6 +254,7 @@ def wait(
     timeout=180,
     wait=True,
     poll_interval=3,
+    ignore_errors=False,
 ):
     """
     Wait until entity fulfill expected condition.
@@ -264,13 +265,20 @@ def wait(
     :param timeout: max time to wait in seconds
     :param wait: if True wait for condition, if False don't wait
     :param poll_interval: Number of seconds we should wait until next condition check
+    :param ignore_errors: If True the erros while polling entity will be ignored
     """
     # Wait until the desired state of the entity:
     if wait:
         start = time.time()
         while time.time() < start + timeout:
             # Exit if the condition of entity is valid:
-            entity = service.get()
+            try:
+                entity = service.get()
+            except Exception as e:
+                if ignore_errors:
+                    return
+                raise
+
             if condition(entity):
                 return
             elif fail_condition(entity):
@@ -538,6 +546,7 @@ class BaseModule(object):
                 wait=self._module.params['wait'],
                 timeout=self._module.params['timeout'],
                 poll_interval=self._module.params['poll_interval'],
+                ignore_errors=True,
             )
         self.changed = True
 
