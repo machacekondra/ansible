@@ -19,6 +19,7 @@
 #
 
 import collections
+import copy
 import inspect
 import os
 import time
@@ -64,10 +65,23 @@ def get_dict_of_struct(struct, connection=None, fetch_nested=False, attributes=N
             remove_underscore(val)
         return val
 
+    def _convert_attribute(value):
+        if fetch_nested and value.href:
+            value = connection.follow_link(value)
+        nested_obj = dict(
+            (attr, convert_value(getattr(value, attr)))
+            for attr in attributes if getattr(value, attr, None)
+        )
+        nested_obj['id'] = getattr(value, 'id', None),
+        return nested_obj
+
     def convert_value(value):
         nested = False
 
         if isinstance(value, sdk.Struct):
+            if fetch_nested and value.href:
+                obj = connection.follow_link(value)
+                return _convert_attribute(obj)
             return get_dict_of_struct(value)
         elif isinstance(value, Enum) or isinstance(value, datetime):
             return str(value)
@@ -85,12 +99,7 @@ def get_dict_of_struct(struct, connection=None, fetch_nested=False, attributes=N
                     if not nested:
                         ret.append(get_dict_of_struct(i))
                     else:
-                        nested_obj = dict(
-                            (attr, convert_value(getattr(i, attr)))
-                            for attr in attributes if getattr(i, attr, None)
-                        )
-                        nested_obj['id'] = getattr(i, 'id', None),
-                        ret.append(nested_obj)
+                        ret.append(_convert_attribute(i))
                 elif isinstance(i, Enum):
                     ret.append(str(i))
                 else:
@@ -560,7 +569,8 @@ class BaseModule(object):
                         fetch_nested=True,
                         attributes=['name'],
                     )
-                    after = before.copy()
+                    #self._module.exit_json(msg=before)
+                    after = copy.deepcopy(before)
                     self.diff_update(after, get_dict_of_struct(new_entity))
                     self._diff['before'] = before
                     self._diff['after'] = after
@@ -568,13 +578,20 @@ class BaseModule(object):
                 self.changed = True
         else:
             # Entity don't exists, so create it:
+            self.changed = True
+            new_entity = self.build_entity()
             if not self._module.check_mode:
                 entity = self._service.add(
-                    self.build_entity(),
+                    new_entity,
                     **kwargs
                 )
                 self.post_create(entity)
-            self.changed = True
+            if self._module._diff:
+                self._diff['after'] = get_dict_of_struct(new_entity)
+                return {
+                    'changed': True,
+                    'diff': self._diff,
+                }
 
         # Wait for the entity to be created and to be in the defined state:
         entity_service = self._service.service(entity.id)
@@ -657,6 +674,10 @@ class BaseModule(object):
                 timeout=self._module.params['timeout'],
                 poll_interval=self._module.params['poll_interval'],
             )
+
+        if self._module._diff:
+            self._diff['before'] = get_dict_of_struct(entity)
+
         self.changed = True
 
         return {
@@ -668,6 +689,7 @@ class BaseModule(object):
                 fetch_nested=self._module.params.get('fetch_nested'),
                 attributes=self._module.params.get('nested_attributes'),
             ),
+            'diff': self._diff,
         }
 
     def action(
