@@ -93,7 +93,7 @@ id:
     sample: 7de90f31-222c-436c-a1ca-7e655bd5b60c
 data_center:
     description: "Dictionary of all the datacenter attributes. Datacenter attributes can be found on your oVirt/RHV instance
-                  at following url: http://ovirt.github.io/ovirt-engine-api-model/master/#types/datacenter."
+                  at following url: http://ovirt.github.io/ovirt-engine-api-model/master/#types/data_center."
     returned: "On success if datacenter is found."
     type: dict
 '''
@@ -119,19 +119,18 @@ from ansible.module_utils.ovirt import (
 
 class DatacentersModule(BaseModule):
 
-    def __get_major(self, full_version):
+    def __get_version_index(self, full_version, index=0):
         if full_version is None:
             return None
         if isinstance(full_version, otypes.Version):
             return full_version.major
-        return int(full_version.split('.')[0])
+        return int(full_version.split('.')[index])
+
+    def __get_major(self, full_version):
+        self.__get_version_index(full_version, 0)
 
     def __get_minor(self, full_version):
-        if full_version is None:
-            return None
-        if isinstance(full_version, otypes.Version):
-            return full_version.minor
-        return int(full_version.split('.')[1])
+        self.__get_version_index(full_version, 1)
 
     def _get_mac_pool(self):
         mac_pool = None
@@ -204,7 +203,7 @@ def main():
         auth = module.params.pop('auth')
         connection = create_connection(auth)
         data_centers_service = connection.system_service().data_centers_service()
-        clusters_module = DatacentersModule(
+        datacenters_module = DatacentersModule(
             connection=connection,
             module=module,
             service=data_centers_service,
@@ -212,9 +211,9 @@ def main():
 
         state = module.params['state']
         if state == 'present':
-            ret = clusters_module.create()
+            ret = datacenters_module.create()
         elif state == 'absent':
-            ret = clusters_module.remove()
+            ret = datacenters_module.remove()
 
         module.exit_json(**ret)
     except Exception as e:
